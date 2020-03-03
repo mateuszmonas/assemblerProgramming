@@ -1,89 +1,24 @@
-assume cs:kod , ds:dane
-
-read_file macro handle, length, buffer
-	push bx
-	push cx
-	push dx
-
-	mov bx, handle	; przeniesienie uchwytu pliku do bx
-	mov cx, length	; liczba bajtow do odczytania
-	lea dx, buffer		; przeniesienie bufora danych do dx
-	mov ah,3fh		; przerwanie wpisujace bajty z pliku do bx, przy niepowodzeniu cf=1
-	int 21h			; odczytane dane w dx
-	jc cannot_read_file
-	
-	pop dx
-	pop cx
-	pop bx
-endm
-
-encrypt macro buffer, key, length
-	push di
-	push si
-	push cx
-	
-	mov cx, length		; wstawienie do cx dlugosci buforu
-	lea di, buffer			; zaladowanie buforu do di
-restart_cipher_string:
-	lea si, key			; zaladowanie buforu do si
-encrypt_string:
-	cmp byte ptr [si], 0	; sprawdzenie czy klucz sie nie skonczyl
-	je restart_cipher_string	; zresetowanie pozycji klucza
-	mov dl, [si]			; przeniesienie aktualnego znaku z klucza do dl
-	xor byte ptr [di], dl	; zaszywrowanie znaku z bufora ze znakiem klucza
-	inc di				; przejscie do kolejnego znaku bufora
-        inc si				; przejscie do kolejnego znaku klucza
-        loop encrypt_string	;
-
-	pop cx
-	pop si
-	pop di
-endm
-
-write_to_file macro handle, length, buffer
-	push bx
-	push cx
-	push dx
-	push ax
-	
-	mov bx,handle		; przeniesienie uchwytu pliku do bx
-	
-	mov al,2			; poczatek przesuniecia jako koniec pliku
-	mov cx,0			; przesuniecie ustawione na 0
-	mov dx,0			; przesuniecie ustawione na 0
-	mov ah,42h			; przerwanie ustawiajace pozycje w pliku
-	int 21h
-	jc cannot_write_to_file
-	
-	pop ax
-	
-	mov cx,length	; liczba bajtow do odczytania
-	lea dx, buffer		; przeniesienie bufora danych do dx
-	mov ah,40h		; przerwanie wpisujace bajty z bx do pliku, przy niepowodzeniu cf=1
-	int 21h			; wpisuje do ax ilosc wpisanych bajtow
-	
-	pop dx
-	pop cx
-	pop bx
-endm
+assume cs:kod , ds:dane, ds:dane1
 
 dane segment
-	cannot_read_arguments_msg db "nie mozna odczytac argumentow",10,13,"poprawne wywoalnie:",10,13,'szyfr.exe  plik_wej  plik_wyj  "klucz do szyfrowania tekstu"$'
+	cannot_read_arguments_msg db "nie mozna odczytac argumentow",10,13,"poprawne wywolanie:",10,13,'szyfr.exe  plik_wej  plik_wyj  "klucz do szyfrowania tekstu"$'
 	cannot_open_file_msg db "nie mozna otworzyc pliku$"
 	cannot_create_file_msg db "nie mozna stworzyc pliku$"
 	cannot_read_file_msg db "nie mozna odczytac z pliku$"
 	cannot_write_to_file_msg db "nie mozna wpisac do pliku$"
 	cannot_close_file_msg db "nie mozna zamknac pliku$"
 	message_encrypted_msg db "wiadomosc zaszyfrowana$"
-
-	file_name_in db 128 dup(?),'$'
-	file_name_out db 128 dup(?), '$'
-	key db 128 dup(?),'$'
-	buffer db 1024 dup(?), '$'
 	
 	file_in dw ?
 	file_out dw ?
 dane ends
+
+dane1 segment
+	file_name_in db 128 dup(?),'$'
+	file_name_out db 128 dup(?), '$'
+	key db 128 dup(?),'$'
+	buffer db 128 dup(?), '$'
+dane1 ends
 
 stos segment stack
 	dw 255 dup(?)
@@ -94,6 +29,9 @@ kod segment
 start:
 	mov ax, seg dane
 	mov ds,ax
+	
+	mov ax, seg dane1
+	mov es,ax
 	
 	mov ax,seg stos 
 	mov ss,ax					; inicjowanie stosu
@@ -106,14 +44,15 @@ start:
 	call create_file
 	
 read_write:
-	read_file file_in, 1024, buffer		; wczytaj bajty z file_in i wypisz ilosc bajtow do ax
+	mov ax, 128
+	call read_file					; wczytaj bajty z file_in i wypisz ilosc bajtow do ax
 	
 	cmp ax, 0					; sprawdzenie czy cos zostalo wczytane
 	je finish_read_write
 	
-	encrypt buffer, key, ax
+	call encrypt
 
-	write_to_file file_out, ax, buffer	; wypisz bajty do file_out
+	call write_to_file				; wypisz bajty do file_out
 	jmp read_write
 	
 finish_read_write:
@@ -157,7 +96,9 @@ message_encrypted:
 	call print
 	call finish_program
 
-open_file proc
+
+;==================================
+open_file:
 	push dx
 	push ax
 	
@@ -170,33 +111,11 @@ open_file proc
 	
 	pop ax
 	pop dx
-open_file endp
-
-;	si - buffer do przewiniecia
-skip_whitespace proc
-skip_whitespace_loop:
-	cmp byte ptr [si], 20h
-	jne finish
-	inc si
-	jmp skip_whitespace_loop
-finish:
 	ret
-skip_whitespace endp
+;==================================
 
-;	dx - tekst do wypisania
-print proc
-	push ax
-	
-	mov ax,seg dane	
-	mov ds,ax				; ustawinie segmentu ds na dane
-	mov ah,09h				; wypisanie tekst z dx
-	int 21h
-	
-	pop ax
-	ret
-print endp
-
-create_file proc
+;==================================
+create_file:
 	push dx
 	push ax
 
@@ -210,9 +129,113 @@ create_file proc
 	pop ax
 	pop dx
 	ret
-create_file endp
+;==================================
 
-read_arguments proc
+;=================================
+; input	ax - ilosc danych do odczytu
+read_file:
+	push bx
+	push cx
+	push dx
+
+	mov cx, ax		; liczba bajtow do odczytania
+	mov bx, file_in	; przeniesienie uchwytu pliku do bx
+	lea dx, buffer		; przeniesienie bufora danych do dx
+	mov ah,3fh		; przerwanie wpisujace bajty z pliku do bx, przy niepowodzeniu cf=1
+	int 21h			; odczytane dane w dx
+	jc cannot_read_file
+	
+	pop dx
+	pop cx
+	pop bx
+	ret
+;==================================
+
+;==================================
+; input	ax - ilosc danych do odczytu
+write_to_file:
+	push bx
+	push cx
+	push dx
+	push ax
+	
+	mov bx,file_out		; przeniesienie uchwytu pliku do bx
+	
+	mov al,2			; poczatek przesuniecia jako koniec pliku
+	mov cx,0			; przesuniecie ustawione na 0
+	mov dx,0			; przesuniecie ustawione na 0
+	mov ah,42h			; przerwanie ustawiajace pozycje w pliku
+	int 21h
+	jc cannot_write_to_file
+	
+	pop ax
+	
+	mov cx,ax	; liczba bajtow do odczytania
+	lea dx, buffer		; przeniesienie bufora danych do dx
+	mov ah,40h		; przerwanie wpisujace bajty z bx do pliku, przy niepowodzeniu cf=1
+	int 21h			; wpisuje do ax ilosc wpisanych bajtow
+	
+	pop dx
+	pop cx
+	pop bx
+	ret
+;==================================
+
+;==================================
+; input	ax - ilosc danych do odczytu
+encrypt:
+	push di
+	push si
+	push cx
+	
+	mov cx, ax		; wstawienie do cx dlugosci buforu
+	dec cx			
+	lea di, buffer			; zaladowanie buforu do di
+restart_cipher_string:
+	lea si, key			; zaladowanie buforu do si
+encrypt_string:
+	cmp byte ptr [si], 0	; sprawdzenie czy klucz sie nie skonczyl
+	je restart_cipher_string	; zresetowanie pozycji klucza
+	mov dl, [si]			; przeniesienie aktualnego znaku z klucza do dl
+	xor byte ptr [di], dl	; zaszywrowanie znaku z bufora ze znakiem klucza
+	inc di				; przejscie do kolejnego znaku bufora
+        inc si				; przejscie do kolejnego znaku klucza
+        loop encrypt_string	;
+
+	pop cx
+	pop si
+	pop di
+	ret
+;==================================
+
+;==================================
+;	si - buffer do przewiniecia
+skip_whitespace:
+skip_whitespace_loop:
+	cmp byte ptr [si], 20h
+	jne finish
+	inc si
+	jmp skip_whitespace_loop
+finish:
+	ret
+;==================================
+
+;==================================
+;	dx - tekst do wypisania
+print:
+	push ax
+	
+	mov ax,seg dane	
+	mov ds,ax				; ustawinie segmentu ds na dane
+	mov ah,09h				; wypisanie tekst z dx
+	int 21h
+	
+	pop ax
+	ret
+;==================================
+
+;==================================
+read_arguments:
 	push bx
 	push ax
 
@@ -279,10 +302,11 @@ finish_read_arguments:
 	pop ax
 	pop bx
 	ret
-read_arguments endp
+;==================================
 
+;==================================
 ;	bx - uchwyt pliku
-close_file proc
+close_file:
 	push ax
 	
 	mov ah,3eh				; przerwanie zamykajace plik z bx, przy niepowodzeniu cf=1
@@ -290,14 +314,14 @@ close_file proc
 	
 	pop ax
 	ret
-close_file endp
+;==================================
 
-finish_program proc			; konczy prace programu
+;==================================
+finish_program:		; konczy prace programu
 	mov ah,4ch
 	int 21h
 	ret
-finish_program endp
-
+;==================================
 
 kod ends
 end start
