@@ -1,4 +1,4 @@
-assume cs:kod , ds:dane, ds:dane1
+assume cs:kod , ds:dane, es:dane1
 
 dane segment
 	cannot_read_arguments_msg db "nie mozna odczytac argumentow",10,13,"poprawne wywolanie:",10,13,'szyfr.exe  plik_wej  plik_wyj  "klucz do szyfrowania tekstu"$'
@@ -27,11 +27,6 @@ stos ends
 
 kod segment
 start:
-	mov ax, seg dane
-	mov ds,ax
-	
-	mov ax, seg dane1
-	mov es,ax
 	
 	mov ax,seg stos 
 	mov ss,ax					; inicjowanie stosu
@@ -102,7 +97,9 @@ open_file:
 	push dx
 	push ax
 	
-	lea dx, file_name_in		; laduje adres pliku do dx
+	mov ax, seg file_name_in	
+	mov ds,ax
+	mov dx, offset file_name_in		; laduje adres pliku do dx
 	xor al,al				; ustawia tryb otwarcia pliku na read
 	mov ah,3dh				; przerwanie otwierajace plik z dx, przy niepowodzeniu cf=1
 	int 21h					; uchwyt pliku w ax
@@ -118,13 +115,15 @@ open_file:
 create_file:
 	push dx
 	push ax
-
-	lea dx, file_name_out		; nazwa pliku do utworzenia
+	
+ 	mov ax, seg file_name_in	
+	mov ds,ax
+	mov dx, offset file_name_out		; nazwa pliku do utworzenia
 	xor cl,cl					; zerowanie atrybutow pliku
 	mov ah,3ch				; przerwanie tworzace plik
 	int 21h					; uchwyt pliku w ax	
 	jc cannot_create_file
-	mov file_out,ax			; przeniesienie uchwytu pliku z ax do file_in
+	mov file_out, ax			; przeniesienie uchwytu pliku z ax do file_in
 
 	pop ax
 	pop dx
@@ -137,10 +136,10 @@ read_file:
 	push bx
 	push cx
 	push dx
-
+	
 	mov cx, ax		; liczba bajtow do odczytania
 	mov bx, file_in	; przeniesienie uchwytu pliku do bx
-	lea dx, buffer		; przeniesienie bufora danych do dx
+	mov dx, offset buffer		; przeniesienie bufora danych do dx
 	mov ah,3fh		; przerwanie wpisujace bajty z pliku do bx, przy niepowodzeniu cf=1
 	int 21h			; odczytane dane w dx
 	jc cannot_read_file
@@ -160,7 +159,6 @@ write_to_file:
 	push ax
 	
 	mov bx,file_out		; przeniesienie uchwytu pliku do bx
-	
 	mov al,2			; poczatek przesuniecia jako koniec pliku
 	mov cx,0			; przesuniecie ustawione na 0
 	mov dx,0			; przesuniecie ustawione na 0
@@ -168,10 +166,13 @@ write_to_file:
 	int 21h
 	jc cannot_write_to_file
 	
+	mov ax, seg file_name_in	
+	mov ds,ax
+	
 	pop ax
 	
 	mov cx,ax	; liczba bajtow do odczytania
-	lea dx, buffer		; przeniesienie bufora danych do dx
+	mov dx, offset buffer		; przeniesienie bufora danych do dx
 	mov ah,40h		; przerwanie wpisujace bajty z bx do pliku, przy niepowodzeniu cf=1
 	int 21h			; wpisuje do ax ilosc wpisanych bajtow
 	
@@ -190,14 +191,14 @@ encrypt:
 	
 	mov cx, ax		; wstawienie do cx dlugosci buforu
 	dec cx			
-	lea di, buffer			; zaladowanie buforu do di
+	mov di, offset buffer			; zaladowanie buforu do di
 restart_cipher_string:
-	lea si, key			; zaladowanie buforu do si
+	mov si, offset key			; zaladowanie buforu do si
 encrypt_string:
-	cmp byte ptr [si], 0	; sprawdzenie czy klucz sie nie skonczyl
+	cmp byte ptr ds:[si], 0	; sprawdzenie czy klucz sie nie skonczyl
 	je restart_cipher_string	; zresetowanie pozycji klucza
-	mov dl, [si]			; przeniesienie aktualnego znaku z klucza do dl
-	xor byte ptr [di], dl	; zaszywrowanie znaku z bufora ze znakiem klucza
+	mov dl, ds:[si]			; przeniesienie aktualnego znaku z klucza do dl
+	xor byte ptr ds:[di], dl	; zaszywrowanie znaku z bufora ze znakiem klucza
 	inc di				; przejscie do kolejnego znaku bufora
         inc si				; przejscie do kolejnego znaku klucza
         loop encrypt_string	;
@@ -239,65 +240,65 @@ read_arguments:
 	push bx
 	push ax
 
-	mov ah,51h				; przerwanie wczytujace do do bx zawartosc cmd po nazwie programu
-	int 21h
-	mov ds,bx				; przeniesienie zawartosci cmd do ds
-	lea si,ds:[81h]			; zaladowanie adresu pierwszego znaku lini polecen do ds:si
+	;mov ah,62h				; przerwanie wczytujace do do bx zawartosc cmd po nazwie programu
+	;int 21h
+	;mov ds,bx				; przeniesienie zawartosci cmd do ds
+	mov si, 81h			; zaladowanie adresu pierwszego znaku lini polecen do ds:si
 	mov ax, seg file_name_in	
 	mov es,ax				; ustawinie segmentu es na file_name_in
-	lea di, file_name_in		; zaladowanie adresu file_name_in do es:di
+	mov di, offset file_name_in		; zaladowanie adresu file_name_in do es:di
 	call skip_whitespace		
 get_file_in_loop:
-	cmp byte ptr [si], 0dh		; sprawdzenie czy podano za malo argumentow
+	cmp byte ptr ds:[si], 0dh		; sprawdzenie czy podano za malo argumentow
 	je read_error
-	cmp byte ptr [si], 20h		; sprawdzenie czy dany argument sie skonczyl
+	cmp byte ptr ds:[si], 20h		; sprawdzenie czy dany argument sie skonczyl
 	je get_file_out			; przejscie do wczytywania kolejnego argumentu
-	mov dl,[si]				; przeniesienie aktualnego znaku wiersza polecen do dl
-	mov byte ptr [di], dl		; zapisanie znaku do file_name_in
+	mov dl,ds:[si]				; przeniesienie aktualnego znaku wiersza polecen do dl
+	mov byte ptr es:[di], dl		; zapisanie znaku do file_name_in
 	inc di
 	inc si
 	jmp get_file_in_loop
 get_file_out:
-	mov byte ptr [di], 0		; dodanie null termination do file_name_in
+	mov byte ptr es:[di], 0		; dodanie null termination do file_name_in
 	mov ax, seg file_name_out	
 	mov es,ax				; ustawinie segmentu es na file_name_out
-	lea di, file_name_out		; zaladowanie adresu file_name_out do es:di
+	mov di, offset file_name_out		; zaladowanie adresu file_name_out do es:di
 	call skip_whitespace
 get_file_out_loop:
-	cmp byte ptr [si], 0dh		; sprawdzenie czy podano za malo argumentow
+	cmp byte ptr ds:[si], 0dh		; sprawdzenie czy podano za malo argumentow
 	je read_error
-	cmp byte ptr [si], 20h		; sprawdzenie czy dany argument sie skonczyl
+	cmp byte ptr ds:[si], 20h		; sprawdzenie czy dany argument sie skonczyl
 	je get_key				; przejscie do wczytywania kolejnego argumentu
-	mov dl,[si]				; przeniesienie aktualnego znaku wiersza polecen do dl
-	mov byte ptr [di], dl		; zapisanie znaku do file_name_in
+	mov dl,ds:[si]				; przeniesienie aktualnego znaku wiersza polecen do dl
+	mov byte ptr es:[di], dl		; zapisanie znaku do file_name_in
 	inc di
 	inc si
 	jmp get_file_out_loop
 get_key:
-	mov byte ptr [di], 0		; dodanie null termination do file_name_out
+	mov byte ptr es:[di], 0		; dodanie null termination do file_name_out
 	mov ax, seg key			
 	mov es,ax				; ustawinie segmentu es na key
-	lea di, key				; zaladowanie adresu key do es:di
+	mov di, offset key				; zaladowanie adresu key do es:di
 	call skip_whitespace
-	cmp byte ptr [si], 22h		; sprawdzenie czy argument klucza zaczyna sie od "
+	cmp byte ptr ds:[si], 22h		; sprawdzenie czy argument klucza zaczyna sie od "
 	jne read_error			
 	inc si					; przejscie do pierwszego znaku klucza
-	cmp byte ptr [si], 22h		; sprawdzenie czy klucz nie jest pusty
+	cmp byte ptr ds:[si], 22h		; sprawdzenie czy klucz nie jest pusty
 	je read_error			
 get_key_loop:
-	cmp byte ptr [si], 0dh		; sprawdzenie czy argumenty nie skonczyly sie przed skonczenie klucza
+	cmp byte ptr ds:[si], 0dh		; sprawdzenie czy argumenty nie skonczyly sie przed skonczenie klucza
 	je read_error
-	cmp byte ptr [si], 22h		; sprawdzenie czy klucz sie skonczyl
+	cmp byte ptr ds:[si], 22h		; sprawdzenie czy klucz sie skonczyl
 	je finish_read_arguments
-	mov dl,[si]				; przeniesienie aktualnego znaku wiersza polecen do dl
-	mov byte ptr [di], dl		; zapisanie znaku do key
+	mov dl,ds:[si]				; przeniesienie aktualnego znaku wiersza polecen do dl
+	mov byte ptr es:[di], dl		; zapisanie znaku do key
 	inc di
 	inc si
 	jmp get_key_loop
 read_error:
 	jmp cannot_read_arguments
 finish_read_arguments:
-	mov byte ptr [di], 0		; dodanie null termination do key
+	mov byte ptr es:[di], 0		; dodanie null termination do key
 
 	pop ax
 	pop bx
