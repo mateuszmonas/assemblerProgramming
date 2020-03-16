@@ -5,7 +5,7 @@ dane segment
     text db 128 dup(?)
     zoom_string db 4 dup(?)
     zoom dw 1
-    cannot_read_arguments_msg db "nie mozna odczytac argumentow",10,13,"poprawne wywolanie:",10,13,'zoom.exe text zoom$'
+    cannot_read_arguments_msg db "nie mozna odczytac argumentow",10,13,"poprawne wywolanie:",10,13,'zoom.exe zoom text$'
 dane ends
 
 stos segment stack
@@ -153,28 +153,13 @@ read_argument:
     mov si, 81h
     mov ax, seg dane
     mov es, ax
-    mov di, offset text
-    call skip_whitespace
-get_text_loop:
-	cmp byte ptr ds:[si], 0dh			; check if arguments have ended too early
-	je read_error
-	cmp byte ptr ds:[si], 20h			; check if given argument is finished
-	je get_zoom						    ; go to parsing next argument
-	mov dl,ds:[si]						; move given sign to dl
-	mov byte ptr es:[di], dl			; save sign to text
-	inc di
-	inc si
-	jmp get_text_loop
-
-get_zoom:
-	mov byte ptr es:[di], 0				; add null terminator to zoom_string
 	mov di, offset zoom_string
 	call skip_whitespace
 get_zoom_loop:
 	cmp byte ptr ds:[si], 0dh
-	je finish_read_arguments
-	cmp byte ptr ds:[si], 22h
-	je finish_read_arguments
+	je read_error
+	cmp byte ptr ds:[si], 20h
+	je get_text
     cmp byte ptr ds:[si], 30h           ; check if ascii code is not lower than 0 code
 	jb read_error
     cmp byte ptr ds:[si], 39h           ; check if ascii code is not greater than 9 code
@@ -185,6 +170,19 @@ get_zoom_loop:
 	inc di
 	inc si
 	jmp get_zoom_loop
+get_text:
+	mov byte ptr es:[di], 0
+    mov di, offset text
+    call skip_whitespace
+get_text_loop:
+	cmp byte ptr ds:[si], 0dh
+	je finish_read_arguments
+	mov dl,ds:[si]						; move given sign to dl
+	mov byte ptr es:[di], dl			; save sign to text
+	inc di
+	inc si
+	jmp get_text_loop
+
 read_error:
 	jmp cannot_read_arguments
 finish_read_arguments:
@@ -229,4 +227,3 @@ finish_program:
 
 kod ends
 end start
-
