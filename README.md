@@ -1,3 +1,5 @@
+__Jak pomogłem daj gwiazdkę.__
+
 # assemblerProgramming
 projects made for assembler languages class
 
